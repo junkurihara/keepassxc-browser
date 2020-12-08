@@ -1,9 +1,10 @@
 'use strict';
 
 const Tests = {
-    GLOBAL: '#global-results',
-    KEEPASSXCBROWSER: '#keepassxcbrowser-results',
-    TOTP: '#totpfield-results'
+    GLOBAL: '#general-results',
+    KEEPASSXCBROWSER: '#input-field-results',
+    TOTP: '#totp-field-results',
+    SEARCH: '#search-field-results',
 };
 
 function createResult(card, res, text) {
@@ -14,76 +15,8 @@ function createResult(card, res, text) {
     document.querySelector(card).appendMultiple(icon, span, br);
 }
 
-function assert(func, expected, card, testName) {
-    if (func === expected) {
-        createResult(card, true, `Test passed: ${testName}`);
-        return;
-    }
-
-    createResult(card, false, `Test failed: ${testName}. Result is: ${func}`);
-}
-
-function assertRegex(func, expected, card, testName) {
-    if ((func === null && expected === false)
-        || (func && (func.length > 0) === expected)) {
-        createResult(card, true, `Test passed: ${testName}`);
-        return;
-    }
-
-    createResult(card, false, `Test failed: ${testName}. Result is: ${func}`);
-}
-
-async function assertInputFields(localFile, expectedFieldCount, actionElementId) {
-    return new Promise((resolve) => {
-        const iframe = document.getElementById('testFile');
-        iframe.src = localFile;
-
-        const iframeLoaded = function() {
-            const frameContent = iframe.contentWindow.document.getElementsByTagName('body')[0];
-
-            // Load prototypes to iframe. This doesn't work automatically from ui.js
-            iframe.contentWindow.Element.prototype.getLowerCaseAttribute = function(attr) {
-                return this.getAttribute(attr) ? this.getAttribute(attr).toLowerCase() : undefined;
-            };
-
-            // An user interaction is required before testing
-            if (actionElementId) {
-                const actionElement = frameContent.querySelector(actionElementId);
-                if (actionElement) {
-                    actionElement.click();
-                }
-            }
-
-            const inputs = kpxcObserverHelper.getInputs(frameContent);
-            assert(inputs.length, expectedFieldCount, Tests.KEEPASSXCBROWSER, `getInputs() for ${localFile} with ${expectedFieldCount} fields`);
-            iframe.removeEventListener('load', iframeLoaded);
-            resolve();
-        };
-
-        // Wait for iframe to load
-        iframe.addEventListener('load', iframeLoaded);
-    });
-}
-
-async function assertTOTPField(classStr, properties, testName, expectedResult) {
-    const input = kpxcUI.createElement('input', classStr, properties);
-    document.body.appendChild(input);
-
-    const isAccepted = kpxcTOTPIcons.isAcceptedTOTPField(input);
-    const isValid = kpxcTOTPIcons.isValid(input);
-
-    document.body.removeChild(input);
-    assert(isAccepted && isValid, expectedResult, Tests.TOTP, testName);
-}
-
-
-/*
- * Actual tests
- * ===================
- */
-
-// Tests for global.js
-async function testGlobal() {
+// General (global.js)
+async function testGeneral() {
     const testCard = Tests.GLOBAL;
 
     // General
@@ -111,8 +44,8 @@ async function testGlobal() {
     }
 }
 
-// Tests for keepassxc-browser.js
-async function testKeePassXCBrowser() {
+// Input field matching (keepassxc-browser.js)
+async function testInputFields() {
     // Local filename, expected fields, action element ID (a button to be clicked)
     const localFiles = [
         [ 'html/basic1.html', 2 ], // Username/passwd fields
@@ -134,7 +67,23 @@ async function testKeePassXCBrowser() {
     document.getElementById('testFile').hidden = true;
 }
 
-// Tests for totp-field.js
+// Search fields (kpxcFields
+async function testSearchFields() {
+    const searchFields = [
+        [ '', { id: 'otp_field', name: 'otp', type: 'text', maxLength: '8' }, 'Generic 2FA field', false ],
+        [ '', { placeholder: 'search', type: 'text', id: 'username' }, 'Placeholder only', true ],
+        [ '', { ariaLabel: 'search', type: 'text', id: 'username' }, 'aria-label only', true ],
+
+    ];
+
+    for (const field of searchFields) {
+        assertSearchField(field[0], field[1], field[2], field[3]);
+    }
+
+    assertSearchForm({ id: 'username', type: 'text', }, 'Generic input field under search form', true);
+}
+
+// TOTP fields (kpxcTOTPIcons)
 async function testTotpFields() {
     const totpFields = [
         [ '', { id: 'otp_field', name: 'otp', type: 'text', maxLength: '8' }, 'Generic 2FA field', true ],
@@ -183,8 +132,9 @@ async function testTotpFields() {
 // Run tests
 (async () => {
     await Promise.all([
-        await testGlobal(),
-        await testKeePassXCBrowser(),
+        await testGeneral(),
+        await testInputFields(),
+        await testSearchFields(),
         await testTotpFields(),
     ]);
 })();
