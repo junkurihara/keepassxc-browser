@@ -128,7 +128,6 @@ kpxcIcons.switchIcons = function() {
     kpxcTOTPIcons.switchIcon(kpxc.databaseState);
 };
 
-
 /**
  * @Object kpxcForm
  * Identifies form submits and password changes.
@@ -309,7 +308,6 @@ kpxcForm.saveForm = function(form, combination) {
     });
 };
 
-
 /**
  * @Object kpxcFields
  * Provides methods for input field handling.
@@ -317,16 +315,60 @@ kpxcForm.saveForm = function(form, combination) {
 const kpxcFields = {};
 
 // Returns all username & password combinations detected from the inputs.
-// After username field is detected, first password field found after that will be saved as a combination.
+// After username field is detected, first password field found after that will be saved as a combination. <- TODO: だめじゃん？
 kpxcFields.getAllCombinations = async function(inputs) {
     const combinations = [];
     let usernameField = null;
+
+    const passwordFieldArray = inputs.filter((input) => input.getLowerCaseAttribute('type') === 'password');
+    const newCombinations = [];
+    let nullUserNameFlag = true;
+    inputs.forEach((input) => {
+        if (input.getLowerCaseAttribute('type') === 'password') {
+            return;
+        } else if (kpxcTOTPIcons.isValid(input)) {
+            // Dynamically added TOTP field
+            const combination = {
+                username: null,
+                password: null,
+                passwordInputs: [],
+                totp: input,
+                form: null
+            };
+
+            newCombinations.push(combination);
+        } else {
+            const combination = {
+                username: input,
+                password: passwordFieldArray[0],
+                passwordInputs: passwordFieldArray,
+                form: input.form
+            };
+            nullUserNameFlag = false;
+            newCombinations.push(combination);
+        }
+    });
+    if (nullUserNameFlag) {
+        const combination = {
+            username: null,
+            password: passwordFieldArray[0],
+            passwordInputs: passwordFieldArray,
+            form: passwordFieldArray[0].form
+        };
+        newCombinations.push(combination);
+    }
+    console.log('newCombinations');
+    console.log(newCombinations);
+
+
+
 
     for (const input of inputs) {
         if (!input) {
             continue;
         }
 
+        // TODO: これって順番が不穏では？
         if (input.getLowerCaseAttribute('type') === 'password') {
             const combination = {
                 username: (!usernameField || usernameField.size < 1) ? null : usernameField,
@@ -363,6 +405,8 @@ kpxcFields.getAllCombinations = async function(inputs) {
 
         combinations.push(combination);
     }
+    console.log('oldCombinations');
+    console.log(combinations);
 
     return combinations;
 };
@@ -611,7 +655,6 @@ kpxcFields.fcssescape = function(ch, asCodePoint) {
     return '\\' + ch;
 };
 
-
 /**
  * @Object kpxc
  * The main content script object.
@@ -766,8 +809,8 @@ kpxc.fillInFromActiveElement = async function(passOnly = false) {
         combination = await kpxc.createCombination(el);
     } else {
         combination = el.type === 'password'
-                    ? await kpxcFields.getCombination(el, 'password')
-                    : await kpxcFields.getCombination(el, 'username');
+            ? await kpxcFields.getCombination(el, 'password')
+            : await kpxcFields.getCombination(el, 'username');
     }
 
     // Do not allow filling password to a non-password field
@@ -997,15 +1040,15 @@ kpxc.identifyFormInputs = async function() {
     const documentForms = document.forms; // Cache the value just in case
 
     for (const form of documentForms) {
-        if (!kpxcFields.isVisible(form)) {
+        if (!kpxcFields.isVisible(form)) { //TODO: 不可視フィールドは無視
             continue;
         }
 
-        if (kpxcFields.isSearchForm(form)) {
+        if (kpxcFields.isSearchForm(form)) { //TODO: 検索フィールドは無視
             continue;
         }
 
-        forms.push(form);
+        forms.push(form); // TODO: それ以外は保持
     }
 
     // Identify input fields in the saved forms
@@ -1016,6 +1059,7 @@ kpxc.identifyFormInputs = async function() {
             inputs.push(f);
         }
     }
+    console.log(inputs);
 
     await kpxc.initCombinations(inputs);
     return inputs;
@@ -1064,14 +1108,14 @@ kpxc.initAutocomplete = function() {
 // Looks for any username & password combinations from the detected input fields
 kpxc.initCombinations = async function(inputs = []) {
     if (inputs.length === 0) {
-        return [];
+        return;
     }
 
     const combinations = kpxcFields.isCustomLoginFieldsUsed()
-                       ? await kpxcFields.useCustomLoginFields()
-                       : await kpxcFields.getAllCombinations(inputs);
+        ? await kpxcFields.useCustomLoginFields()
+        : await kpxcFields.getAllCombinations(inputs);
     if (!combinations || combinations.length === 0) {
-        return [];
+        return;
     }
 
     for (const c of combinations) {
@@ -1087,8 +1131,6 @@ kpxc.initCombinations = async function(inputs = []) {
             kpxc.combinations.push(c);
         }
     }
-
-    return combinations;
 };
 
 // The main function for finding input fields
@@ -1097,10 +1139,13 @@ kpxc.initCredentialFields = async function() {
     _called.clearLogins = true;
 
     // Identify all forms in the page
-    const formInputs = await kpxc.identifyFormInputs();
+    const formInputs = await kpxc.identifyFormInputs(); // TODO: HTMLForm形式でとって来れるものを全部取ってきて、HTMLInputElement形式で返しているっぽい
+    console.log(formInputs);
 
     // Search all remaining inputs from the page, ignore the previous input fields
+    // TODO: HTMLForm形式で取って来れなかったのを頑張ってHTMLInputElement形式で取得しているっぽい
     const pageInputs = await kpxcFields.getAllPageInputs(formInputs);
+    console.log(pageInputs);
     if (formInputs.length === 0 && pageInputs.length === 0) {
         // Run 'redetect_credentials' manually if no fields are found after a page load
         setTimeout(async function() {
@@ -1371,12 +1416,20 @@ kpxc.setValueWithChange = function(field, value) {
     field.value = value;
     field.dispatchEvent(new Event('input', { 'bubbles': true }));
     field.dispatchEvent(new Event('change', { 'bubbles': true }));
-    field.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: false, key: '', char: '' }));
-    field.dispatchEvent(new KeyboardEvent('keypress', { bubbles: true, cancelable: false, key: '', char: '' }));
-    field.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: false, key: '', char: '' }));
+    field.dispatchEvent(new KeyboardEvent('keydown', {
+        bubbles: true, cancelable: false, key: '', char: ''
+    }));
+    field.dispatchEvent(new KeyboardEvent('keypress', {
+        bubbles: true, cancelable: false, key: '', char: ''
+    }));
+    field.dispatchEvent(new KeyboardEvent('keyup', {
+        bubbles: true, cancelable: false, key: '', char: ''
+    }));
 };
 
 // Returns true if site is ignored
+// TODO: true -> 完全無視
+// TODO: false -> 当該サイトに対してsitePreferencesがあったらば、globalの変数を上書きして挙動を変更してくる
 kpxc.siteIgnored = async function(condition) {
     if (kpxc.settings.sitePreferences) {
         let currentLocation;
@@ -1435,7 +1488,6 @@ kpxc.updateDatabaseState = async function() {
 
     kpxc.databaseState = res.databaseClosed ? DatabaseState.LOCKED : DatabaseState.UNLOCKED;
 };
-
 
 /**
  * @Object kpxcObserverHelper
@@ -1708,9 +1760,9 @@ MutationObserver = window.MutationObserver || window.WebKitMutationObserver;
  * Content script initialization.
  */
 const initContentScript = async function() {
+    console.log('initContentScript');
     try {
-        const settings = await sendMessage('load_settings');
-        kpxc.settings = settings;
+        kpxc.settings = await sendMessage('load_settings');
 
         if (await kpxc.siteIgnored()) {
             return;
